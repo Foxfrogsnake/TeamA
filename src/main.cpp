@@ -269,12 +269,12 @@ int drivePID() {
     vex::task::sleep(dT);
 
   }
-  return 1;
+  return 0;
 }
 
 void auton(void) {
 
-  // vex::task drivePID(2);
+  vex::task drivep = task(drivePID);
 
   rev_swingturn(setspeed*50.0, false);
   move(setspeed*50);
@@ -292,9 +292,17 @@ void auton(void) {
   lift(-50, false); //bring arm down
   turn(setspeed*50);
 
+  resetDriveSensors = true;
+  desiredValue = 200;
+  turnDesiredValue = 300;
+
+  resetDriveSensors = true;
+  desiredValue = 200;
+  turnDesiredValue = 300;
+
 }
 
-void  preautonn(void){
+void  preauton(void){
 
 
 }
@@ -302,7 +310,7 @@ void  preautonn(void){
 /*________________________________________________________DRIVER________________________________________________________*/
 
 bool state1 = 1;
-bool convey_state = 0;
+bool convey_state = 1;
 
 void L1() {
   //pneumatics and conveyor
@@ -372,6 +380,7 @@ void R2() {
     Controller1.Screen.print("close");
     state3 = 1;
   }
+  Controller1.Screen.clearScreen();
   Controller1.Screen.print(state3);
 }
 
@@ -409,7 +418,7 @@ void usercontrol(void) {
     Controller1.Screen.print(inertial_s.value());
 
     Controller1.ButtonR1.pressed(R1);
-    Controller1.ButtonL2.pressed(R2);
+    Controller1.ButtonA.pressed(R2);
     Controller1.ButtonL2.pressed(R2);
     Controller1.ButtonL1.pressed(L1);
     Controller1.ButtonX.pressed(X);
@@ -418,11 +427,18 @@ void usercontrol(void) {
 
     }
     
-    if (abs(Controller1.Axis3.position()) > 15 || abs(Controller1.Axis1.position()) > 15) {
+    if (abs(Controller1.Axis3.position()) > 0.5 || abs(Controller1.Axis1.position()) > 0.5) {
     TLMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() + Controller1.Axis1.position() * 0.75)/8, vex::velocityUnits::pct);
     TRMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() - Controller1.Axis1.position() * 0.75)/8, vex::velocityUnits::pct);
     BLMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() + Controller1.Axis1.position() * 0.75)/8, vex::velocityUnits::pct);
     BRMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() - Controller1.Axis1.position() * 0.75)/8, vex::velocityUnits::pct);
+    }
+
+    else {
+      TLMotor.stop();
+      TRMotor.stop();
+      BLMotor.stop();
+      BRMotor.stop();
     }
 
 
