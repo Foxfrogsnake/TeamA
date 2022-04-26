@@ -19,7 +19,7 @@ const float WHEEL_DIAMETER = 10.16 * 0.01; // m
 const float WHEEL_CIRCUMFERENCE = M_PI * WHEEL_DIAMETER;
 // const float rotConst = 0;
 // const float liftRatio = 0;
-const float speed = 50;
+const float speed = 100;
 // bool taskk = 0;
 // bool up = 1;
 // float diag_wheel_dist = 45;
@@ -139,13 +139,13 @@ int signnum_c(int x) {
 }
 
 //settings
-double kP = 0;
-double kI = 0;
-double kD = 0;
+double kP = 0.9;
+double kI = 0.9;
+double kD = 0.9;
 
-double t_kP = 0;
-double t_kI = 0;
-double t_kD = 0;
+double t_kP = 0.9;
+double t_kI = 0.9;
+double t_kD = 0.9;
 
 //autonomous settings
 int desiredValue = 200;
@@ -281,22 +281,23 @@ void setPID(float desired, float desiredturn) {
 void auton(void) {
 
   vex::task drivep = task(drivePID);
+  Controller1.Screen.print("PID activated");
 
-  rev_swingturn(setspeed*50.0, false);
-  move(setspeed*50);
-  R2(); //grip base
-  move(-setspeed*10);
-  turn(setspeed*50);
-  lift(10, true); //raise arm
-  move(setspeed*50);
-  setspeed = 0.5;
-  move(setspeed*50);
-  turn(-setspeed*50);
-  lift(-1, false); //lower arm on base
-  R2(); //ungrip
-  lift(1, true); //move arm up a bit  
-  lift(-50, false); //bring arm down
-  turn(setspeed*50);
+  rev_swingturn(setspeed*360.0, false);
+  move(setspeed*5000);
+  // R2(); //grip base
+  // move(-setspeed*10);
+  // turn(setspeed*50);
+  // lift(10, true); //raise arm
+  // move(setspeed*50);
+  // setspeed = 0.5;
+  // move(setspeed*50);
+  // turn(-setspeed*50);
+  // lift(-1, false); //lower arm on base
+  // R2(); //ungrip
+  // lift(1, true); //move arm up a bit  
+  // lift(-50, false); //bring arm down
+  // turn(setspeed*50);
 
   resetDriveSensors = true;
   desiredValue = 200;
@@ -335,13 +336,15 @@ void L1() {
 
     state1 = 1;
   }
-
   convey_state = !convey_state;
+
   Controller1.Screen.clearScreen();
+  Controller1.Screen.print(convey_state);
   
 }
 
 bool state2 = 1;
+int i_position;
 
 void R1() {
   //arm
@@ -399,6 +402,22 @@ void X() {
   BRMotor.spinFor(1, rev, 150, velocityUnits::pct, false);
 }
 
+void Up() {
+  arm1.spinFor(100,rotationUnits::deg,150, velocityUnits::pct,false);
+  arm2.spinFor(100,rotationUnits::deg,150, velocityUnits::pct,false);
+  while(arm1.isSpinning()){
+    task::sleep(30);
+  }
+}
+
+void Down() {
+  arm1.spinFor(-100,rotationUnits::deg,150, velocityUnits::pct,false);
+  arm2.spinFor(-100,rotationUnits::deg,150, velocityUnits::pct,false);
+  while(arm1.isSpinning()){
+    task::sleep(30);
+  }
+}
+
 void A()  {
 //move goal from black clamp to large arm
 
@@ -419,25 +438,29 @@ void usercontrol(void) {
 
   enabledrivePID = false;
   
+  i_position = arm1.rotation(deg);
+
+  Controller1.Screen.print("Hello");
 
   while(1) {
-    Controller1.Screen.print(inertial_s.value());
 
     Controller1.ButtonR1.pressed(R1);
-    Controller1.ButtonA.pressed(R2);
+    
     Controller1.ButtonR2.pressed(R2);
     Controller1.ButtonL1.pressed(L1);
     Controller1.ButtonX.pressed(X);
+    Controller1.ButtonUp.pressed(Up);
+    Controller1.ButtonDown.pressed(Down);
 
     if (0) {
 
     }
     
-    if (abs(Controller1.Axis3.position()) > 1 || abs(Controller1.Axis1.position()) > 1) {
-    TLMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() + Controller1.Axis1.position() * 0.75)/8, vex::velocityUnits::pct);
-    TRMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() - Controller1.Axis1.position() * 0.75)/8, vex::velocityUnits::pct);
-    BLMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() + Controller1.Axis1.position() * 0.75)/8, vex::velocityUnits::pct);
-    BRMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() - Controller1.Axis1.position() * 0.75)/8, vex::velocityUnits::pct);
+    if (abs(Controller1.Axis3.position()) > 15 || abs(Controller1.Axis1.position()) > 15) {
+    TLMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() + Controller1.Axis1.position()*0.75)/100, vex::velocityUnits::pct);
+    TRMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() - Controller1.Axis1.position()*0.75)/100, vex::velocityUnits::pct);
+    BLMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() + Controller1.Axis1.position()*0.75)/100, vex::velocityUnits::pct);
+    BRMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() - Controller1.Axis1.position()*0.75)/100, vex::velocityUnits::pct);
     }
 
     else {
@@ -449,11 +472,16 @@ void usercontrol(void) {
 
 
     if (convey_state) {
-      conveyor.spin(fwd, 200, pct);
+      conveyor.spin(fwd, 100, pct);
     }
     else {
       conveyor.setBrake(brake);
-      conveyor.stop();
+      conveyor.stop(brake);
+    }
+
+    if (arm1.position(deg) < i_position) {
+      // arm1.setBrake(brake);
+      // arm2.setBrake(brake);
     }
 
   }
