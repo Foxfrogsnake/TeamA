@@ -272,6 +272,12 @@ int drivePID() {
   return 0;
 }
 
+void setPID(float desired, float desiredturn) {
+  resetDriveSensors = 1;
+  desiredValue = desired;
+  desiredturn = desiredturn;
+}
+
 void auton(void) {
 
   vex::task drivep = task(drivePID);
@@ -419,7 +425,7 @@ void usercontrol(void) {
 
     Controller1.ButtonR1.pressed(R1);
     Controller1.ButtonA.pressed(R2);
-    Controller1.ButtonL2.pressed(R2);
+    Controller1.ButtonR2.pressed(R2);
     Controller1.ButtonL1.pressed(L1);
     Controller1.ButtonX.pressed(X);
 
@@ -427,7 +433,7 @@ void usercontrol(void) {
 
     }
     
-    if (abs(Controller1.Axis3.position()) > 0.5 || abs(Controller1.Axis1.position()) > 0.5) {
+    if (abs(Controller1.Axis3.position()) > 1 || abs(Controller1.Axis1.position()) > 1) {
     TLMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() + Controller1.Axis1.position() * 0.75)/8, vex::velocityUnits::pct);
     TRMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() - Controller1.Axis1.position() * 0.75)/8, vex::velocityUnits::pct);
     BLMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() + Controller1.Axis1.position() * 0.75)/8, vex::velocityUnits::pct);
