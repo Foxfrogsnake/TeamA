@@ -57,6 +57,8 @@ motor conveyor = motor(PORT13);
 pneumatics pist1 = pneumatics(Brain.ThreeWirePort.A);
 pneumatics pist3 = pneumatics(Brain.ThreeWirePort.C);
 inertial inertial_s = inertial(vex::PORT20);
+encoder opt1 = encoder(Brain.ThreeWirePort.H);
+encoder opt2 = encoder(Brain.ThreeWirePort.G);
 
 void L1();
 void R1();
@@ -70,9 +72,9 @@ float setspeed = 1;
 //counterclockwise
 void move(float dist) {
 
-  TLMotor.spinFor(-dist/WHEEL_CIRCUMFERENCE, rev, 150, velocityUnits::pct, false);
+  TLMotor.spinFor(dist/WHEEL_CIRCUMFERENCE, rev, 150, velocityUnits::pct, false);
   TRMotor.spinFor(dist/WHEEL_CIRCUMFERENCE, rev, 150, velocityUnits::pct, false);
-  BLMotor.spinFor(-dist/WHEEL_CIRCUMFERENCE, rev, 150, velocityUnits::pct, false);
+  BLMotor.spinFor(dist/WHEEL_CIRCUMFERENCE, rev, 150, velocityUnits::pct, false);
   BRMotor.spinFor(dist/WHEEL_CIRCUMFERENCE, rev, 150, velocityUnits::pct, true);
   while (BRMotor.isSpinning()) {
     task::sleep(20);
@@ -203,6 +205,8 @@ int armTotalError;
 
 bool resetDriveSensors = false;
 bool PID_quit = false;
+bool lateral = 1;
+bool spiny = 0;
 
 //var for use
 
@@ -234,7 +238,11 @@ int drivePID() {
     //Proportional
     error = desiredValue - averagePosition;
 
-    if (abs(error) < 0.01) {
+    if (abs(error) < 1) {
+      PID_quit = true;
+    }
+
+    if (abs(turnError) < 1) {
       PID_quit = true;
     }
 
@@ -324,8 +332,21 @@ int drivePID() {
     double armMotorPower = t_kP * turnError + t_kD * turnDerivative + t_kI * turnTotalError; 
 
 
-    TRMotor.spin(fwd, lateralMotorPower + turnMotorPower, voltageUnits::volt);
-    TLMotor.spin(fwd, lateralMotorPower - turnMotorPower, voltageUnits::volt);
+    if (lateral) {
+    TRMotor.spin(fwd, lateralMotorPower, voltageUnits::volt);
+    TLMotor.spin(fwd, lateralMotorPower, voltageUnits::volt);
+
+    BRMotor.spin(fwd, lateralMotorPower, voltageUnits::volt);
+    BLMotor.spin(fwd, lateralMotorPower, voltageUnits::volt);
+    }
+
+    else if (spiny) {
+    TRMotor.spin(fwd, turnMotorPower, voltageUnits::volt);
+    TLMotor.spin(fwd, -turnMotorPower, voltageUnits::volt);
+
+    BRMotor.spin(fwd, turnMotorPower, voltageUnits::volt);
+    BLMotor.spin(fwd, -turnMotorPower, voltageUnits::volt);
+    }
 
     arm1.spin(fwd, armMotorPower, voltageUnits::volt);
 
@@ -337,15 +358,27 @@ int drivePID() {
 }
 
 //values to convert setPID args to metres for convenience
-float lateral_convert = 1;
-float rotation_convert =1 ;
+float lateral_convert = 360/WHEEL_CIRCUMFERENCE;
+float rotation_convert = 360/WHEEL_CIRCUMFERENCE;
 
-void setPID(float desired, float desired_turn) {
-  desiredValue = lateral_convert * desired;
-  turnDesiredValue = rotation_convert * desired_turn;
+void setPID(float val, char a) {
   resetDriveSensors = true;
+  desiredValue = lateral_convert * val;
+  turnDesiredValue = rotation_convert * val;
+
+  //activate lateral movement
+  if (a == 'f') {
+    lateral = 1;
+    spiny = 0;
+  }
+
+  //activate spin movement 
+  else if (a == 's') {
+    lateral = 0;
+    spiny = 1;
+  }
   PID_quit = false;
-  while (PID_quit) {
+  while (!PID_quit) {
     task::sleep(20);
   }
 }
@@ -371,13 +404,43 @@ void skills() {
 void auton(void) {
 
   vex::task drivep = task(drivePID);
-  //Controller1.Screen.print("PID activated");
+  Controller1.Screen.print("PID activated");
 
   arm1.setBrake(brake);
   arm2.setBrake(brake);
   resetDriveSensors = true;
+  // R2();
+  //-0.24 in logger m
+  // move(1.3);
+  // R2();
+  // move(-100);
+  // r_turn(90);
+  setPID(1, 0);
+  Controller1.Screen.clearScreen();
+  Controller1.Screen.print("complete");
+  while (PID_quit) {
+    task::sleep(20);
+  }
+  setPID(-1, 0);
+  Controller1.Screen.clearScreen();
+  Controller1.Screen.print("complete 2");
+  while (PID_quit) {
+    task::sleep(20);
+  }
 
-  setPID(500,0);
+  //rotate
+  setPID(0, 90);
+  Controller1.Screen.clearScreen();
+  Controller1.Screen.print("complete 3");
+  while (PID_quit) {
+    task::sleep(20);
+  }
+
+  R2();
+  setPID(0.8663, 0);
+
+
+  vex::task::sleep(5000);
   Controller1.Screen.print("PID #1");
 
   //Controller1.Screen.print("PID activated");
@@ -393,6 +456,12 @@ void auton(void) {
   setPID(0,1000000000);
 
   Controller1.Screen.print("PID 3");
+
+  /* start */
+
+  
+
+
 }
 
 void  preauton(void){
@@ -601,7 +670,11 @@ void usercontrol(void) {
       // arm2.setBrake(brake);
     }
 
-  task::sleep(100);
+    Brain.Screen.print(opt1.position(deg));
+    Brain.Screen.print(opt2.position(deg));
+    Brain.Screen.clearScreen();
+
+  task::sleep(10);
   }
 }
 
