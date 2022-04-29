@@ -61,6 +61,7 @@ encoder opt1 = encoder(Brain.ThreeWirePort.H);
 encoder opt2 = encoder(Brain.ThreeWirePort.G);
 
 void L1();
+void L2();
 void R1();
 void R2();
 void X();
@@ -138,6 +139,7 @@ void lift(float angle, bool state1) {
     arm1.spinFor(100, deg, false);
     arm2.spinFor(100, deg, false);
     Controller1.Screen.clearScreen();
+    Controller1.Screen.setCursor(1, 1);
     Controller1.Screen.print(state1);
     state1 = 0;
   }
@@ -147,6 +149,7 @@ void lift(float angle, bool state1) {
     arm1.spinFor(-100, deg, false);
     arm2.spinFor(-100, deg, false);
     Controller1.Screen.clearScreen();
+    Controller1.Screen.setCursor(1, 1);
     Controller1.Screen.print(state1);
     state1 = 1;
   }
@@ -163,13 +166,13 @@ int signnum_c(int x) {
 }
 
 //settings
-double kP = 0.9;
-double kI = 0.5;
-double kD = 0.4;
+double kP = 0.3;
+double kI = 0.1;
+double kD = 0.05;
 
-double t_kP = 0.1;
+double t_kP = 0.3;
 double t_kI = 0.1;
-double t_kD = 0.1;
+double t_kD = 0.09;
 
 double a_kP = 0.9;
 double a_kI = 0.5;
@@ -207,6 +210,9 @@ bool resetDriveSensors = false;
 bool PID_quit = false;
 bool lateral = 1;
 bool spiny = 0;
+
+double lateralMotorPower;
+double turnMotorPower;
 
 //var for use
 
@@ -300,7 +306,7 @@ int drivePID() {
       turnTotalError = signnum_c(turnTotalError) * maxTurnIntegral;
     }
 
-    double turnMotorPower = a_kP * turnError + a_kD * turnDerivative + a_kI * turnTotalError; 
+    double turnMotorPower = t_kP * turnError + t_kD * turnDerivative + t_kI * turnTotalError; 
 
     /*------------arm movement PID------------*/
 
@@ -329,7 +335,7 @@ int drivePID() {
       armTotalError = signnum_c(armTotalError) * maxTurnIntegral;
     }
 
-    double armMotorPower = t_kP * turnError + t_kD * turnDerivative + t_kI * turnTotalError; 
+    double armMotorPower = a_kP * turnError + a_kD * turnDerivative + a_kI * turnTotalError; 
 
 
     if (lateral) {
@@ -341,19 +347,39 @@ int drivePID() {
     }
 
     else if (spiny) {
-    TRMotor.spin(fwd, turnMotorPower, voltageUnits::volt);
-    TLMotor.spin(fwd, -turnMotorPower, voltageUnits::volt);
+    while (inertial_s.yaw() <= 90) { 
+        TRMotor.spin(fwd, turnMotorPower, voltageUnits::volt);
+        TLMotor.spin(fwd, -turnMotorPower, voltageUnits::volt);
 
-    BRMotor.spin(fwd, turnMotorPower, voltageUnits::volt);
-    BLMotor.spin(fwd, -turnMotorPower, voltageUnits::volt);
+        BRMotor.spin(fwd, turnMotorPower, voltageUnits::volt);
+        BLMotor.spin(fwd, -turnMotorPower, voltageUnits::volt);
+
+      }
     }
 
-    arm1.spin(fwd, armMotorPower, voltageUnits::volt);
+    //arm1.spin(fwd, armMotorPower, voltageUnits::volt);
 
     preverror = error;
     vex::task::sleep(dT);
 
   }
+  return 0;
+}
+
+int printtocontroller() {
+  while (1) {
+
+  Controller1.Screen.setCursor(1, 1);
+  Controller1.Screen.print("PID lateral %3.2f", lateralMotorPower);
+
+  Controller1.Screen.setCursor(3, 1);
+  Controller1.Screen.print("PID turn %3.2f", turnMotorPower);
+
+  task::sleep(500);
+  Controller1.Screen.clearLine(1);
+  Controller1.Screen.clearLine(5);
+  }
+
   return 0;
 }
 
@@ -401,9 +427,15 @@ void skills() {
   // turn(setspeed*50);
 }
 
+void  preauton(void){
+
+
+}
+
 void auton(void) {
 
   vex::task drivep = task(drivePID);
+  vex::task printcon = task(printtocontroller);
   Controller1.Screen.print("PID activated");
 
   arm1.setBrake(brake);
@@ -417,12 +449,14 @@ void auton(void) {
   // r_turn(90);
   setPID(1, 0);
   Controller1.Screen.clearScreen();
+  Controller1.Screen.setCursor(1, 1);
   Controller1.Screen.print("complete");
   while (PID_quit) {
     task::sleep(20);
   }
   setPID(-1, 0);
   Controller1.Screen.clearScreen();
+  Controller1.Screen.setCursor(1, 1);
   Controller1.Screen.print("complete 2");
   while (PID_quit) {
     task::sleep(20);
@@ -431,6 +465,7 @@ void auton(void) {
   //rotate
   setPID(0, 90);
   Controller1.Screen.clearScreen();
+  Controller1.Screen.setCursor(1, 1);
   Controller1.Screen.print("complete 3");
   while (PID_quit) {
     task::sleep(20);
@@ -464,11 +499,6 @@ void auton(void) {
 
 }
 
-void  preauton(void){
-
-
-}
-
 /*________________________________________________________DRIVER________________________________________________________*/
 
 bool state1 = 1;
@@ -480,6 +510,7 @@ void L1() {
   if (state1) {
     pist3.open();
     Controller1.Screen.clearScreen();
+    Controller1.Screen.setCursor(1, 1);
     Controller1.Screen.print(pist3.value());
     
     state1 = 0;
@@ -488,6 +519,7 @@ void L1() {
   else {
     pist3.close();
     Controller1.Screen.clearScreen();
+    Controller1.Screen.setCursor(1, 1);
     Controller1.Screen.print(pist3.value());
 
     state1 = 1;
@@ -496,8 +528,14 @@ void L1() {
   
 
   Controller1.Screen.clearScreen();
+  Controller1.Screen.setCursor(1, 1);
   Controller1.Screen.print(convey_state);
   
+}
+
+void L2() {
+  //conveyor manual
+  convey_state = 0;
 }
 
 bool state2 = 1;
@@ -510,8 +548,6 @@ void R1() {
   if (state2) {
     arm1.spinFor(650, deg, 100, velocityUnits::pct, false);
     arm2.spinFor(650, deg, 100, velocityUnits::pct, false);
-    Controller1.Screen.clearScreen();
-    Controller1.Screen.print(state2);
     state2 = 0;
   }
 
@@ -519,12 +555,12 @@ void R1() {
   else {
     arm1.spinFor(-650, deg, 100, velocityUnits::pct, false);
     arm2.spinFor(-650, deg, 100, velocityUnits::pct, false);
-    Controller1.Screen.clearScreen();
-    Controller1.Screen.print(state2);
     state2 = 1;
   }
 
   //this_thread::sleep_for(500);
+  Controller1.Screen.clearScreen();
+  Controller1.Screen.setCursor(1, 1);
   Controller1.Screen.print(state2);
 }
 
@@ -536,6 +572,7 @@ void R2() {
   if (state3) {
     pist1.open();
     Controller1.Screen.clearScreen();
+    Controller1.Screen.setCursor(1, 1);
     Controller1.Screen.print("open");
     state3 = 0;
   }
@@ -543,10 +580,12 @@ void R2() {
   else {
     pist1.close();
     Controller1.Screen.clearScreen();
+    Controller1.Screen.setCursor(1, 1);
     Controller1.Screen.print("close");
     state3 = 1;
   }
   Controller1.Screen.clearScreen();
+  Controller1.Screen.setCursor(1, 1);
   Controller1.Screen.print(state3);
 }
 
@@ -630,8 +669,10 @@ void usercontrol(void) {
       Controller1.ButtonL1.pressed(L1);
     }
     else if (Controller1.ButtonL2.pressing()) {
-      conveyor.stop();
+      convey_state = 0;
       }
+
+    Controller1.ButtonL2.pressed(L2);
     Controller1.ButtonX.pressed(X);
     Controller1.ButtonUp.pressed(Up);
     Controller1.ButtonDown.pressed(Down);
@@ -675,6 +716,35 @@ void usercontrol(void) {
     Brain.Screen.clearScreen();
 
   task::sleep(10);
+
+  inertial::quaternion inertialSensorQuaternion = inertial_s.orientation();
+
+        Brain.Screen.printAt( 20,  30, "GX  %8.3f", inertial_s.gyroRate( xaxis, dps ) );
+        Brain.Screen.printAt( 20,  45, "GY  %8.3f", inertial_s.gyroRate( yaxis, dps ) );
+        Brain.Screen.printAt( 20,  60, "GZ  %8.3f", inertial_s.gyroRate( zaxis, dps ) );
+
+        Brain.Screen.printAt( 20,  90, "AX  %8.3f", inertial_s.acceleration( xaxis ) );
+        Brain.Screen.printAt( 20, 105, "AY  %8.3f", inertial_s.acceleration( yaxis ) );
+        Brain.Screen.printAt( 20, 120, "AZ  %8.3f", inertial_s.acceleration( zaxis ) );
+
+        Brain.Screen.printAt( 20, 150, "A   %8.3f", inertialSensorQuaternion.a );
+        Brain.Screen.printAt( 20, 165, "B   %8.3f", inertialSensorQuaternion.b );
+        Brain.Screen.printAt( 20, 180, "C   %8.3f", inertialSensorQuaternion.c );
+        Brain.Screen.printAt( 20, 195, "D   %8.3f", inertialSensorQuaternion.d );
+
+        Brain.Screen.printAt( 150, 30, "Roll     %7.2f", inertial_s.roll() );
+        Brain.Screen.printAt( 150, 45, "Pitch    %7.2f", inertial_s.pitch() );
+        Brain.Screen.printAt( 150, 60, "Yaw      %7.2f", inertial_s.yaw() );
+
+        Brain.Screen.printAt( 150, 90, "Heading  %7.2f", inertial_s.heading() );
+        Brain.Screen.printAt( 150,105, "Rotation %7.2f", inertial_s.rotation() );
+
+        if( inertial_s.isCalibrating() )
+          Brain.Screen.printAt( 20,225, "Calibration  In Progress" );
+        else
+          Brain.Screen.printAt( 20,225, "Calibration  Done" );
+
+        Brain.Screen.render();
   }
 }
 
