@@ -31,7 +31,7 @@ using namespace vex;
 // 	float derivative;
 // } PIDController;
 
-const float WHEEL_DIAMETER = 10.16 * 0.01; // m
+const float WHEEL_DIAMETER = 10.76 * 0.01; // m
 const float WHEEL_CIRCUMFERENCE = M_PI * WHEEL_DIAMETER;
 // const float rotConst = 0;
 // const float liftRatio = 0;
@@ -56,9 +56,11 @@ motor arm2 = motor(vex::PORT12, gearSetting::ratio36_1, true);
 motor conveyor = motor(PORT13);
 pneumatics pist1 = pneumatics(Brain.ThreeWirePort.A);
 pneumatics pist3 = pneumatics(Brain.ThreeWirePort.C);
-inertial inertial_s = inertial(vex::PORT20);
+inertial inertial_s = inertial(vex::PORT6);
 encoder opt1 = encoder(Brain.ThreeWirePort.H);
 encoder opt2 = encoder(Brain.ThreeWirePort.G);
+//smartdrive Drivetraain (leftMotors, rightMotors, inertial_s, wheel_diameter*pi, track_width, wheel_base, cm, external_gear_ratio));
+
 
 void L1();
 void L2();
@@ -66,6 +68,7 @@ void R1();
 void R2();
 void X();
 float setspeed = 1;
+bool convey_state = 1;
 
 /*________________________________________________________AUTONOMOUS________________________________________________________*/
 
@@ -89,12 +92,14 @@ float robot_circum = M_PI * robot_diam;
 
 void r_turn(float angle) {
 
-  TLMotor.spinFor((angle/360) * robot_circum / WHEEL_CIRCUMFERENCE, rev, 150, velocityUnits::pct, false);
-  TRMotor.spinFor(-(angle/360) * robot_circum / WHEEL_CIRCUMFERENCE, rev, 150, velocityUnits::pct, false);
-  BLMotor.spinFor((angle/360) * robot_circum / WHEEL_CIRCUMFERENCE, rev, 150, velocityUnits::pct, false);
-  BRMotor.spinFor(-(angle/360) * robot_circum / WHEEL_CIRCUMFERENCE, rev, 150, velocityUnits::pct, true);
-  while (BRMotor.isSpinning()) {
-    task::sleep(20);
+  float target = inertial_s.yaw();
+  inertial_s.resetRotation();
+
+  while (target <= angle) {
+    TLMotor.spin(fwd, 100, pct);
+    TRMotor.spin(fwd, 100, pct);
+    BLMotor.spin(fwd, 100, pct);
+    TRMotor.spin(fwd, 100, pct);
   }
 
 }
@@ -167,8 +172,8 @@ int signnum_c(int x) {
 
 //settings
 double kP = 0.3;
-double kI = 0.1;
-double kD = 0.05;
+double kI = 0.0;
+double kD = 0.0;
 
 double t_kP = 0.3;
 double t_kI = 0.1;
@@ -180,9 +185,9 @@ double a_kD = 0.4;
 
 //change in time between sensor data
 float dT = 20;
-int maxTurnIntegral = 300;
-int maxIntegral = 300;
-int integralBound = 20;
+int maxTurnIntegral = 6;
+int maxIntegral = 6;
+int integralBound = 6;
 
 //autonomous settings:
 //lateral
@@ -191,6 +196,12 @@ int error = 0; //positional error
 int preverror = 0; //position 20 ms ago
 int derivative; //error - preverror
 int totalerror; //sum of error
+int turn_preverror;
+int turn_derivative;
+int turn_integral;
+int lr_error;
+bool fixed = 0;
+double turn_fix;
 
 //turn movement
 int turnDesiredValue = 0;
@@ -206,13 +217,14 @@ int armPrevError = 0;
 int armDerivative;
 int armTotalError;
 
-bool resetDriveSensors = false;
-bool PID_quit = false;
-bool lateral = 1;
-bool spiny = 0;
-
 double lateralMotorPower;
 double turnMotorPower;
+
+bool resetDriveSensors = false;
+bool PID_quit = false;
+bool lateral = 0;
+bool spiny = 0;
+bool armPIDstate = 0;
 
 //var for use
 
@@ -222,7 +234,6 @@ int drivePID() {
   while (enabledrivePID) {
 
     if (resetDriveSensors) {
-       
       resetDriveSensors = false;
       TLMotor.setRotation(0, deg);
       TRMotor.setRotation(0, deg);
@@ -233,24 +244,19 @@ int drivePID() {
 
     /*------------lateral movement PID------------*/
 
+
     int leftMotorPos = TLMotor.rotation(deg);
     int rightMotorPos = TRMotor.rotation(deg);
-     //get position of motor
+    int leftBMotorPos = BLMotor.rotation(deg);
+    int rightBMotorPos = BRMotor.rotation(deg);
+    //get position of motor
 
     //get average of two motor
     int averagePosition;
-    averagePosition = (leftMotorPos + rightMotorPos)/2;
+    averagePosition = ((leftMotorPos+leftBMotorPos)*0.5 + (rightMotorPos+rightBMotorPos)*0.5)/2;
 
     //Proportional
     error = desiredValue - averagePosition;
-
-    if (abs(error) < 1) {
-      PID_quit = true;
-    }
-
-    if (abs(turnError) < 1) {
-      PID_quit = true;
-    }
 
     //Derivative
     derivative = error - preverror;
@@ -261,27 +267,33 @@ int drivePID() {
     }
 
     else {
-      totalerror = 0;
+      totalerror = integralBound - 0.1;
     }
 
     if (error == 0) {
       totalerror = 0;
     }
 
-    if (abs(totalerror) > maxIntegral) {
-      totalerror = signnum_c(totalerror) * maxIntegral;
+    if (abs(totalerror) > maxTurnIntegral) {
+      totalerror = signnum_c(totalerror) * maxTurnIntegral;
     }
-    //make sure integral doesn't exceed limit
+
+    int turn_dif = (leftMotorPos) - rightMotorPos;
+    lr_error = turn_dif;
+    turn_derivative = lr_error - turn_preverror;
+    turn_preverror = turn_dif;
+    turn_integral += lr_error;
+    turn_fix = 10 * lr_error + 0 * turn_integral + 0.5 * turn_derivative;
+
 
     //kD and kI are better represented as kP/T, and kP*T
     double lateralMotorPower = kP * error + kD * derivative + kI * totalerror;
 
 
-
     /*------------turn movement PID------------*/
     //get difference of wheel turn
 
-    int turnDifference = leftMotorPos - rightMotorPos;
+    int turnDifference = 0.5 * (rightMotorPos + rightBMotorPos);
 
     //Proportional
     turnError = turnDesiredValue - turnDifference;
@@ -338,31 +350,62 @@ int drivePID() {
     double armMotorPower = a_kP * turnError + a_kD * turnDerivative + a_kI * turnTotalError; 
 
 
-    if (lateral) {
-    TRMotor.spin(fwd, lateralMotorPower, voltageUnits::volt);
-    TLMotor.spin(fwd, lateralMotorPower, voltageUnits::volt);
+    if (lateral && abs(turn_derivative) > 3) {
+      TRMotor.spin(fwd, lateralMotorPower + turn_fix, voltageUnits::volt);
+      TLMotor.spin(fwd, lateralMotorPower - turn_fix, voltageUnits::volt);
 
-    BRMotor.spin(fwd, lateralMotorPower, voltageUnits::volt);
-    BLMotor.spin(fwd, lateralMotorPower, voltageUnits::volt);
+      BRMotor.spin(fwd, lateralMotorPower + turn_fix, voltageUnits::volt);
+      BLMotor.spin(fwd, lateralMotorPower - turn_fix, voltageUnits::volt);
     }
+    else if (lateral && abs(turn_derivative) < 3) {
+      TRMotor.spin(fwd, lateralMotorPower, voltageUnits::volt);
+      TLMotor.spin(fwd, lateralMotorPower, voltageUnits::volt);
+
+      BRMotor.spin(fwd, lateralMotorPower, voltageUnits::volt);
+      BLMotor.spin(fwd, lateralMotorPower, voltageUnits::volt);
+    }
+    // else if (lateral && abs(error) < 360) {
+    //   TRMotor.spin(fwd, 10, velocityUnits::pct);
+    //   TLMotor.spin(fwd, 10, velocityUnits::pct);
+
+    //   BRMotor.spin(fwd, 10, velocityUnits::pct);
+    //   BLMotor.spin(fwd, 10, velocityUnits::pct);
+    // }
 
     else if (spiny) {
-    while (inertial_s.yaw() <= 90) { 
-        TRMotor.spin(fwd, turnMotorPower, voltageUnits::volt);
-        TLMotor.spin(fwd, -turnMotorPower, voltageUnits::volt);
+      TRMotor.spin(fwd, turnMotorPower, voltageUnits::volt);
+      TLMotor.spin(fwd, -turnMotorPower, voltageUnits::volt);
 
-        BRMotor.spin(fwd, turnMotorPower, voltageUnits::volt);
-        BLMotor.spin(fwd, -turnMotorPower, voltageUnits::volt);
-
+      BRMotor.spin(fwd, turnMotorPower, voltageUnits::volt);
+      BLMotor.spin(fwd, -turnMotorPower, voltageUnits::volt);
       }
+
+    if (armPIDstate) {
+      arm1.spin(fwd, armMotorPower, voltageUnits::volt);
+      arm2.spin(fwd, armMotorPower, voltageUnits::volt);
+      }
+
+    //NOT PID BUT FOR AUTONOMOUS PERIOD
+    if (convey_state) {
+      conveyor.spin(fwd, 100, pct);
+    }
+    else {
+      conveyor.setBrake(brake);
+      conveyor.stop();
+    }
+
     }
 
     //arm1.spin(fwd, armMotorPower, voltageUnits::volt);
-
     preverror = error;
-    vex::task::sleep(dT);
+    turnPreverror = turnError;
+    armPrevError = armError;
 
-  }
+    vex::task::sleep(dT);
+    Controller1.Screen.clearScreen();
+    Controller1.Screen.setCursor(1,1);
+    Controller1.Screen.print(totalerror);
+
   return 0;
 }
 
@@ -370,14 +413,13 @@ int printtocontroller() {
   while (1) {
 
   Controller1.Screen.setCursor(1, 1);
-  Controller1.Screen.print("PID lateral %3.2f", lateralMotorPower);
+  Controller1.Screen.print("PID error %3.2f", totalerror);
 
-  Controller1.Screen.setCursor(3, 1);
-  Controller1.Screen.print("PID turn %3.2f", turnMotorPower);
+  Controller1.Screen.setCursor(2, 1);
+  Controller1.Screen.print("PID turn %3.2f", error);
 
-  task::sleep(500);
-  Controller1.Screen.clearLine(1);
-  Controller1.Screen.clearLine(5);
+  task::sleep(1000);
+  Controller1.Screen.clearScreen();
   }
 
   return 0;
@@ -385,28 +427,78 @@ int printtocontroller() {
 
 //values to convert setPID args to metres for convenience
 float lateral_convert = 360/WHEEL_CIRCUMFERENCE;
-float rotation_convert = 360/WHEEL_CIRCUMFERENCE;
+float rotation_convert = 360/robot_circum;
 
 void setPID(float val, char a) {
   resetDriveSensors = true;
+  task::sleep(20); // wait for PID to calibrate
   desiredValue = lateral_convert * val;
   turnDesiredValue = rotation_convert * val;
+  Controller1.Screen.clearScreen();
+  Controller1.Screen.setCursor(1,1);
+  Controller1.Screen.print("setPID");
 
-  //activate lateral movement
-  if (a == 'f') {
+  if (a == 'f') { //activate lateral movement
     lateral = 1;
     spiny = 0;
+    PID_quit = false;
   }
 
-  //activate spin movement 
-  else if (a == 's') {
+  else if (a == 's') {  //activate spin movement 
     lateral = 0;
     spiny = 1;
+    PID_quit = false;
   }
-  PID_quit = false;
+  else if (a == 'u') {
+    armPIDstate = 1;
+  }
   while (!PID_quit) {
     task::sleep(20);
+    Controller1.Screen.clearScreen();
+    Controller1.Screen.setCursor(1,1);
+    Controller1.Screen.print(error);
+
+    if (lateral) {
+      if (abs(error) < 5) {
+        PID_quit = true;
+        Controller1.Screen.clearScreen();
+        Controller1.Screen.setCursor(1, 1);
+        Controller1.Screen.print("PID_quit");
+      }
+      while (!fixed) {
+        Controller1.Screen.clearScreen();
+        Controller1.Screen.setCursor(1, 1);
+        Controller1.Screen.print(lr_error);
+      if (abs(turn_derivative) < 2) {
+        fixed = 1;
+      }
+      TRMotor.spin(fwd, turn_fix, voltageUnits::volt);
+      TLMotor.spin(fwd, -turn_fix, voltageUnits::volt);
+
+      BRMotor.spin(fwd, turn_fix, voltageUnits::volt);
+      BLMotor.spin(fwd, -turn_fix, voltageUnits::volt);
+    }
+    }
+
+    else if (spiny) {
+      if (abs(turnError) < 10) {
+        PID_quit = true;
+        Controller1.Screen.clearScreen();
+        Controller1.Screen.setCursor(1, 1);
+        Controller1.Screen.print("PID_quit");
+      }
+    }
   }
+  Controller1.Screen.clearScreen();
+  Controller1.Screen.setCursor(1,1);
+  Controller1.Screen.print("PID is %b", PID_quit);
+  PID_quit = false;
+
+  Controller1.Screen.clearScreen();
+  Controller1.Screen.setCursor(1,1);
+  Controller1.Screen.print("turn fixed", PID_quit);
+  fixed = false;
+
 }
 
 void skills() {
@@ -432,69 +524,37 @@ void  preauton(void){
 
 }
 
+char f = 'f'; //forward
+char s = 's'; //spin
+char up = 'u'; //arm lift
+
 void auton(void) {
 
   vex::task drivep = task(drivePID);
-  vex::task printcon = task(printtocontroller);
+  //vex::task printcon = task(printtocontroller);
   Controller1.Screen.print("PID activated");
 
-  arm1.setBrake(brake);
-  arm2.setBrake(brake);
-  resetDriveSensors = true;
   // R2();
   //-0.24 in logger m
   // move(1.3);
   // R2();
   // move(-100);
   // r_turn(90);
-  setPID(1, 0);
-  Controller1.Screen.clearScreen();
-  Controller1.Screen.setCursor(1, 1);
-  Controller1.Screen.print("complete");
-  while (PID_quit) {
-    task::sleep(20);
-  }
-  setPID(-1, 0);
-  Controller1.Screen.clearScreen();
-  Controller1.Screen.setCursor(1, 1);
-  Controller1.Screen.print("complete 2");
-  while (PID_quit) {
-    task::sleep(20);
-  }
-
-  //rotate
-  setPID(0, 90);
-  Controller1.Screen.clearScreen();
-  Controller1.Screen.setCursor(1, 1);
-  Controller1.Screen.print("complete 3");
-  while (PID_quit) {
-    task::sleep(20);
-  }
-
-  R2();
-  setPID(0.8663, 0);
-
-
-  vex::task::sleep(5000);
-  Controller1.Screen.print("PID #1");
-
-  //Controller1.Screen.print("PID activated");
-
-  vex::task::sleep(1000);
-
-  setPID(1000, 1000);
-  
-  Controller1.Screen.print("PID 2");
-
-  vex::task::sleep(1000);
-
-  setPID(0,1000000000);
-
-  Controller1.Screen.print("PID 3");
 
   /* start */
+  lateral = 1;
+  convey_state = 0;
 
-  
+  setPID(1,f);
+
+  // R1();
+  // setPID(1.41, f);
+  // R1();
+  // setPID(-0.11, f);
+  // setPID(2.95,s);
+  // setPID(-0.1,f);
+  // R2();
+  // setPID(0.1,f);
 
 
 }
@@ -502,9 +562,8 @@ void auton(void) {
 /*________________________________________________________DRIVER________________________________________________________*/
 
 bool state1 = 1;
-bool convey_state = 1;
 
-void L1() {
+void R1() {
   //pneumatics and conveyor
   
   if (state1) {
@@ -535,27 +594,49 @@ void L1() {
 
 void L2() {
   //conveyor manual
-  convey_state = 0;
+  if (convey_state) {
+    convey_state = 0;
+    Controller1.Screen.clearScreen();
+    Controller1.Screen.setCursor(1, 1);
+    Controller1.Screen.print("conveyor off");
+  }
+  else if (convey_state == 0) {
+    convey_state = 1;
+    Controller1.Screen.clearScreen();
+    Controller1.Screen.setCursor(1, 1);
+    Controller1.Screen.print("conveyor on");
+  }
 }
 
 bool state2 = 1;
 int i_position;
+bool armbreak;
 
-void R1() {
+void Up() {
   //arm
 
   //move up
   if (state2) {
+
     arm1.spinFor(650, deg, 100, velocityUnits::pct, false);
     arm2.spinFor(650, deg, 100, velocityUnits::pct, false);
+    Controller1.Screen.clearScreen();
+    Controller1.Screen.setCursor(1, 1);
+    Controller1.Screen.print("open");
     state2 = 0;
+    armbreak = 0;
   }
 
   //move down
   else {
+
     arm1.spinFor(-650, deg, 100, velocityUnits::pct, false);
     arm2.spinFor(-650, deg, 100, velocityUnits::pct, false);
+    Controller1.Screen.clearScreen();
+    Controller1.Screen.setCursor(1, 1);
+    Controller1.Screen.print("close");
     state2 = 1;
+    armbreak = 0;
   }
 
   //this_thread::sleep_for(500);
@@ -606,29 +687,26 @@ void X() {
   BRMotor.spinFor(1, rev, 150, velocityUnits::pct, false);
 }
 
-void Up() {
-  arm1.spinFor(100,rotationUnits::deg,150, velocityUnits::pct,false);
-  arm2.spinFor(100,rotationUnits::deg,150, velocityUnits::pct,false);
-  while(arm1.isSpinning()){
-    task::sleep(30);
-  }
-}
-
-void Down() {
-  arm1.spinFor(-100,rotationUnits::deg,150, velocityUnits::pct,false);
-  arm2.spinFor(-100,rotationUnits::deg,150, velocityUnits::pct,false);
-  while(arm1.isSpinning()){
-    task::sleep(30);
-  }
-}
-
 void A()  {
 //move goal from black clamp to large arm
+  R1();
+  arm1.spinFor(-10, deg, 100, velocityUnits::pct, false);
+  arm2.spinFor(-10, deg, 100, velocityUnits::pct, true);
+  R2();
+  arm1.spinFor(10, deg, 100, velocityUnits::pct, false);
+  arm2.spinFor(10, deg, 100, velocityUnits::pct, true);
+  TLMotor.spinFor(10, deg, 100, velocityUnits::pct, false);
+  TRMotor.spinFor(10, deg, 100, velocityUnits::pct, false);
+  R1();
 
 }
 
 void B() {
-//flip see saw
+
+  TLMotor = motor(PORT9);
+  TRMotor = motor(PORT7);
+  BLMotor = motor(PORT10);
+  BRMotor = motor(PORT8);
 
 }
 
@@ -637,49 +715,62 @@ void Y() {
 //move goal from large arm to black clamp
 }
 
-/*motor lock = motor(PORT20);
-bool state4 =1;
-void LOCK() {
-  if (state4) {
-    lock.spinFor(fwd, 120, deg, 100, velocityUnits::pct);
-    state4 = 0;
-  }
-  else {
-    lock.spinFor(fwd, -120, deg, 100, velocityUnits::pct);
-    state4 = 1;
-  }
-  
-}*/
-
-
 void usercontrol(void) {
 
   enabledrivePID = false;
+  vex::task printcon = task(printtocontroller);
   
   i_position = arm1.rotation(deg);
 
   Controller1.Screen.print("Hello");
 
   while(1) {
-
-    Controller1.ButtonR1.pressed(R1);
     
+    Controller1.ButtonR1.pressed(R1);
     Controller1.ButtonR2.pressed(R2);
-    if (1) {
-      Controller1.ButtonL1.pressed(L1);
-    }
-    else if (Controller1.ButtonL2.pressing()) {
-      convey_state = 0;
-      }
-
     Controller1.ButtonL2.pressed(L2);
     Controller1.ButtonX.pressed(X);
     Controller1.ButtonUp.pressed(Up);
-    Controller1.ButtonDown.pressed(Down);
+    Controller1.ButtonB.pressed(B);
 
-    if (0) {
-
+    if (arm1.position(deg) < i_position) {
+      arm1.setStopping(brake);
+      arm2.setStopping(brake);
+      // arm1.setBrake(brake);
+      // arm2.setBrake(brake);
+      Controller1.rumble("___");
+      if (Controller1.ButtonL2.pressing()) {
+        arm1.spin(fwd, 100, velocityUnits::pct);
+        arm2.spin(fwd, 100, velocityUnits::pct);
+      }
     }
+
+    else if (arm1.position(deg) > i_position + 650) {
+      Controller1.rumble("___");
+      if (Controller1.ButtonL1.pressing()) {
+        arm1.spin(fwd, -100, velocityUnits::pct);
+        arm2.spin(fwd, -100, velocityUnits::pct);
+      }
+    }
+
+    else {
+      if (Controller1.ButtonL2.pressing()) {
+        arm1.spin(fwd, 100, velocityUnits::pct);
+        arm2.spin(fwd, 100, velocityUnits::pct);
+      }
+
+    else if (Controller1.ButtonL1.pressing()) {
+        arm1.spin(fwd, -100, velocityUnits::pct);
+        arm2.spin(fwd, -100, velocityUnits::pct);
+      }
+
+    else {
+      Controller1.ButtonR1.pressed(R1);
+      arm1.stop(hold);
+      arm2.stop(hold);
+    }
+  }
+
     
     if (abs(Controller1.Axis3.position()) > 15 || abs(Controller1.Axis1.position()) > 15) {
     TLMotor.spin(vex::directionType::fwd, speed*(Controller1.Axis3.position() + Controller1.Axis1.position()*0.75)/100, vex::velocityUnits::pct);
@@ -704,11 +795,6 @@ void usercontrol(void) {
     else {
       conveyor.setBrake(brake);
       conveyor.stop();
-    }
-
-    if (arm1.position(deg) < i_position) {
-      // arm1.setBrake(brake);
-      // arm2.setBrake(brake);
     }
 
     Brain.Screen.print(opt1.position(deg));
